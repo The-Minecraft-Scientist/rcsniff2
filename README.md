@@ -4,6 +4,8 @@ sniff and deserialize (most) RC WebServicesServer requests
 * have rust installed
 * clone the repo
 * `cargo run`
-OR 
+
+OR
+
 * download binary for your OS from github release (when I set it up)
 * `./rcsniff2`
