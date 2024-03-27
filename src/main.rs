@@ -41,7 +41,7 @@ async fn main() {
     let outgoing_packet_tx = make_outgoing_handler();
     let int = datalink::interfaces()
         .into_iter()
-        .filter(|s| *dbg!(&s.name) == iface_name)
+        .filter(|s| s.name == iface_name)
         .next()
         .unwrap();
     let Ok(Channel::Ethernet(_, mut rx)) = datalink::channel(&int, Default::default()) else {
@@ -180,7 +180,6 @@ pub mod handler {
     use rcfakeclient::serialization::{op_code::MessageType, StreamDeserializer};
 
     pub async fn handler_thread(mut rec: UnboundedReceiver<Vec<u8>>) {
-        dbg!("handler started");
         while let Some(buf) = rec.recv().await {
             if buf[0] != 0xF3 {
                 continue;

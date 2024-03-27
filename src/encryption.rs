@@ -40,7 +40,6 @@ impl Encryption {
         let mut s = Sha256::new();
         s.update(&bytes);
         let key_arr = s.finalize();
-        dbg!(key_arr);
         self.cipher = Some((
             cbc::Encryptor::new(&key_arr, &[0u8; 16].into()),
             cbc::Decryptor::new(&key_arr, &[0u8; 16].into()),
