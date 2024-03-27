@@ -668,8 +668,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rcfakeclient"
-version = "0.1.0"
+name = "rcsniff2"
+version = "0.0.1"
 dependencies = [
  "aes",
  "anyhow",

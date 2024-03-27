@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Cursor, Seek, Write};
 use std::task::Poll;
 use std::{env, process};
 
@@ -8,6 +8,8 @@ use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::Packet;
+use rcsniff2::serialization::op_code::MessageType;
+use rcsniff2::serialization::StreamDeserializer;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::spawn;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -69,7 +71,7 @@ fn make_incoming_handler() -> UnboundedSender<Vec<u8>> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let (packet_tx, packet_rx) = unbounded_channel();
     spawn(incoming_reciever_thread(tx, ByteReciever::new(packet_rx)));
-    spawn(handler::handler_thread(rx));
+    spawn(handler_thread(rx));
     packet_tx
 }
 
@@ -77,7 +79,7 @@ fn make_outgoing_handler() -> UnboundedSender<Vec<u8>> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let (packet_tx, packet_rx) = unbounded_channel();
     spawn(outgoing_reciever_thread(tx, ByteReciever::new(packet_rx)));
-    spawn(handler::handler_thread(rx));
+    spawn(handler_thread(rx));
     packet_tx
 }
 pub struct ByteReciever {
@@ -172,72 +174,64 @@ async fn outgoing_reciever_thread(
         }
     }
 }
-pub mod handler {
-    use std::io::{Cursor, Seek};
+pub async fn handler_thread(mut rec: UnboundedReceiver<Vec<u8>>) {
+    while let Some(buf) = rec.recv().await {
+        if buf[0] != 0xF3 {
+            continue;
+        }
+        let code = buf[1];
+        let encflag = (code & 128) != 0;
+        if encflag {
+            println!("ERROR: encountered encrypted packet. This program cannot decrypt encrypted packets");
+            continue;
+        }
+        let b2 = buf.clone();
+        let mut buf = Cursor::new(&buf[..]);
+        buf.seek(std::io::SeekFrom::Start(2)).unwrap();
 
-    use tokio::sync::mpsc::UnboundedReceiver;
-
-    use rcfakeclient::serialization::{op_code::MessageType, StreamDeserializer};
-
-    pub async fn handler_thread(mut rec: UnboundedReceiver<Vec<u8>>) {
-        while let Some(buf) = rec.recv().await {
-            if buf[0] != 0xF3 {
-                continue;
+        let msg_type = code & 127;
+        let mut des = StreamDeserializer::new(buf);
+        match MessageType::from_repr(msg_type).unwrap() {
+            MessageType::Init => {
+                // init request
             }
-            let code = buf[1];
-            let encflag = (code & 128) != 0;
-            if encflag {
-                println!("ERROR: encountered encrypted packet. This program cannot decrypt encrypted packets");
-                continue;
+            MessageType::InitResponse => { //Init response
             }
-            let b2 = buf.clone();
-            let mut buf = Cursor::new(&buf[..]);
-            buf.seek(std::io::SeekFrom::Start(2)).unwrap();
-
-            let msg_type = code & 127;
-            let mut des = StreamDeserializer::new(buf);
-            match MessageType::from_repr(msg_type).unwrap() {
-                MessageType::Init => {
-                    // init request
+            MessageType::Operation => {
+                //Operation Request
+                let res = des.deserialize_operation_request();
+                println!("Operation Request: {:#?}", res);
+                if res.is_err() {
+                    println!("Erroring Request: {:x?}", b2);
                 }
-                MessageType::InitResponse => { //Init response
+            }
+            MessageType::OperationResponse => {
+                //Operation response
+                let res = des.deserialize_operation_response();
+                println!("Operation Response: {:#?}", res);
+                if res.is_err() {
+                    println!("Erroring Request: {:x?}", b2);
                 }
-                MessageType::Operation => {
-                    //Operation Request
-                    let res = des.deserialize_operation_request();
-                    println!("Operation Request: {:#?}", res);
-                    if res.is_err() {
-                        println!("Erroring Request: {:x?}", b2);
-                    }
-                }
-                MessageType::OperationResponse => {
-                    //Operation response
-                    let res = des.deserialize_operation_response();
-                    println!("Operation Response: {:#?}", res);
-                    if res.is_err() {
-                        println!("Erroring Request: {:x?}", b2);
-                    }
-                }
-                MessageType::Event => {
-                    //EventData
-                    println!("Event Data: {:#?}", des.deserialize_event_data());
-                }
-                MessageType::InternalOperationRequest => {
-                    let res = des.deserialize_operation_request();
-                    println!("Internal Operation Request: {:#?}", res);
-                    //Internal operation request
-                }
-                MessageType::InternalOperationResponse => {
-                    //Internal operation response
-                    let res = des.deserialize_operation_response();
-                    println!("Internal Operation Response: {:#?}", res);
-                }
-                MessageType::Message => {
-                    //Message
-                }
-                MessageType::RawMessage => {
-                    //Raw message
-                }
+            }
+            MessageType::Event => {
+                //EventData
+                println!("Event Data: {:#?}", des.deserialize_event_data());
+            }
+            MessageType::InternalOperationRequest => {
+                let res = des.deserialize_operation_request();
+                println!("Internal Operation Request: {:#?}", res);
+                //Internal operation request
+            }
+            MessageType::InternalOperationResponse => {
+                //Internal operation response
+                let res = des.deserialize_operation_response();
+                println!("Internal Operation Response: {:#?}", res);
+            }
+            MessageType::Message => {
+                //Message
+            }
+            MessageType::RawMessage => {
+                //Raw message
             }
         }
     }
