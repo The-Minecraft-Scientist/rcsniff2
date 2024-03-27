@@ -1,11 +1,5 @@
 use core::slice;
-use std::{
-    backtrace::Backtrace,
-    collections::HashMap,
-    fmt::Debug,
-    hash::Hash,
-    io::{Cursor, Read},
-};
+use std::{backtrace::Backtrace, collections::HashMap, fmt::Debug, hash::Hash, io::Read};
 
 use anyhow::{Context, Result};
 use enum_dispatch::enum_dispatch;
@@ -19,12 +13,13 @@ use self::{op_code::WebServicesOpCode, type_code::TypeCode};
 pub mod op_code;
 pub mod type_code;
 #[enum_dispatch]
-//We only use enum dispatch for its automatic From impl for al variant inner types
+// We only use enum dispatch for its automatic From impl for all variant inner types
 trait ValueDummyTrait {}
 
 #[enum_dispatch(ValueDummyTrait)]
 #[derive(Clone, Hash, PartialEq, Eq, AsRefStr)]
-//This is currently a bit jank. the HashableX stuff needs to exist because this format isnt well specified and I wouldn't be surprised if there's a hashtable or dict with hashtables as a key type..
+// This is currently a bit jank. the HashableX stuff needs to exist because this format isnt well specified
+// and I wouldn't be surprised if there's a packet somewhere with a hashtable or dict with hashtables as a key type..
 pub enum Value {
     Byte(u8),
     Bool(bool),
@@ -39,9 +34,10 @@ pub enum Value {
     StringArray(Vec<String>),
     IntegerArray(Vec<i32>),
     ByteArray(Vec<u8>),
-    ///Dict has fixed key and value type
+    // Dict has (usually) fixed key and value types as a storage optimization (save 1 typecode byte per key/value)
+    // (if the Unknown type is supplied as the key or value type, it will fall back to reading a type id per key/value)
     Dictionary(HashableHashmap<Value, Value>),
-    // Any type allowed for key/value
+    // HashTable does not have the Dict type optimization but is equivalent to a Dict<Unknown, Unknown>
     HashTable(HashTable<Value, Value>),
     EventData(EventData),
     OperationRequest(OperationRequest),
@@ -126,17 +122,19 @@ pub struct HashTable<K: Hash + Eq, V: Hash + Eq>(HashableHashmap<K, V>);
 #[derive(Debug, Clone, NewType, PartialEq, Eq, Hash)]
 pub struct ObjectArray(Vec<Value>);
 
+//This is currently unused, RC only has two custom types, both of which are used primarily by the SocialServices server. I just wanted to have it for the sake of completeness
 #[derive(Debug, Clone, Copy)]
 pub struct CustomType {
+    #[allow(dead_code)]
     serialize: for<'a> fn(&'a [u8]) -> Value,
     deserialize: for<'a> fn(&'a [u8]) -> Value,
 }
-pub struct StreamDeserializer<'a> {
-    pub reader: Cursor<&'a [u8]>,
+pub struct StreamDeserializer<T> {
+    pub reader: T,
     pub custom_type_impls: HashMap<u8, CustomType>,
 }
-impl<'a> StreamDeserializer<'a> {
-    pub fn new(reader: Cursor<&'a [u8]>) -> Self {
+impl<T: Read> StreamDeserializer<T> {
+    pub fn new(reader: T) -> Self {
         Self {
             reader,
             custom_type_impls: HashMap::new(),

@@ -5,7 +5,8 @@ use aes::{
 use num_bigint::{BigUint, RandBigInt};
 use rand::thread_rng;
 use sha2::{Digest, Sha256};
-
+//Currently unused, this pile of jank should interoperate with Photon message encryption, it's just not implemented since true fake client is
+// blocked on EAC reversing and we obviously can't decrypt messages from the real client without its secret
 pub struct Encryption {
     pub prime: BigUint,
     pub secret: BigUint,

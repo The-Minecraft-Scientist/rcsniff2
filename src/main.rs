@@ -12,11 +12,22 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::spawn;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
-    let mut l = io::stdout().lock();
-    writeln!(l, "rcsniff2 [optional network interface name]").unwrap();
-    writeln!(l, "valid interfaces: {:#?}", datalink::interfaces()).unwrap();
+    {
+        let mut l = io::stdout().lock();
+        writeln!(l, "rcsniff2 [optional network interface name]").unwrap();
+        writeln!(
+            l,
+            "valid interfaces: {:#?}",
+            datalink::interfaces()
+                .into_iter()
+                .map(|i| i.name)
+                .collect::<Vec<_>>()
+        )
+        .unwrap();
+    }
+
     let Some(iface_name) = env::args()
         .nth(1)
         .or(netdev::get_default_interface().ok().map(|iface| iface.name))
@@ -25,20 +36,7 @@ async fn main() {
         writeln!(l, "failed to get default interface name and you haven't specified one. Please specify the network interface to use").unwrap();
         process::exit(1);
     };
-    fn make_incoming_handler() -> UnboundedSender<Vec<u8>> {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let (packet_tx, packet_rx) = unbounded_channel();
-        spawn(incoming_reciever_thread(tx, ByteReciever::new(packet_rx)));
-        spawn(handler::handler_thread(rx));
-        packet_tx
-    }
-    fn make_outgoing_handler() -> UnboundedSender<Vec<u8>> {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let (packet_tx, packet_rx) = unbounded_channel();
-        spawn(outgoing_reciever_thread(tx, ByteReciever::new(packet_rx)));
-        spawn(handler::handler_thread(rx));
-        packet_tx
-    }
+
     let incoming_packet_tx = make_incoming_handler();
     let outgoing_packet_tx = make_outgoing_handler();
     let int = datalink::interfaces()
@@ -65,6 +63,22 @@ async fn main() {
             }
         }
     }
+}
+
+fn make_incoming_handler() -> UnboundedSender<Vec<u8>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (packet_tx, packet_rx) = unbounded_channel();
+    spawn(incoming_reciever_thread(tx, ByteReciever::new(packet_rx)));
+    spawn(handler::handler_thread(rx));
+    packet_tx
+}
+
+fn make_outgoing_handler() -> UnboundedSender<Vec<u8>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (packet_tx, packet_rx) = unbounded_channel();
+    spawn(outgoing_reciever_thread(tx, ByteReciever::new(packet_rx)));
+    spawn(handler::handler_thread(rx));
+    packet_tx
 }
 pub struct ByteReciever {
     buf: Vec<u8>,
@@ -174,7 +188,7 @@ pub mod handler {
             let code = buf[1];
             let encflag = (code & 128) != 0;
             if encflag {
-                println!("ERROR: encountered encrypted packet. Encryption is not yet supported");
+                println!("ERROR: encountered encrypted packet. This program cannot decrypt encrypted packets");
                 continue;
             }
             let b2 = buf.clone();
