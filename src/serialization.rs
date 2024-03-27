@@ -1,5 +1,5 @@
 use core::slice;
-use std::{backtrace::Backtrace, collections::HashMap, fmt::Debug, hash::Hash, io::Read};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, io::Read};
 
 use anyhow::{Context, Result};
 use enum_dispatch::enum_dispatch;
@@ -211,10 +211,6 @@ impl<T: Read> StreamDeserializer<T> {
         let val = self.read_byte()?;
         let ret = TypeCode::from_repr(val)
             .context(format!("parsing type code, got unexpected code {}", val));
-        if ret.is_err() {
-            #[cfg(debug_assertions)]
-            println!("{:#?}", Backtrace::force_capture());
-        }
         ret
     }
     pub fn deserialize_array(&mut self) -> Result<Vec<Value>> {
